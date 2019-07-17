@@ -11,6 +11,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.naive_bayes import GaussianNB
 from sklearn import preprocessing
 from collections import Counter
+from sklearn.model_selection import RandomizedSearchCV
 
 from sklearn.model_selection import cross_val_score
 
@@ -131,6 +132,50 @@ def prepare_train_test_split(df, target_index, sampler = None, split_ratio = 0.7
 
     return X_train, X_test, y_train, y_test
 
+def perform_experiment(df, classifier_set, sampler, iterations = 1, r_state = None, cv_iter = None, cat_col = ['city','registered_via']):
+    metrics_all = pd.DataFrame()
+
+    for i in range(0, iterations):
+
+        print("Model Build Iteration", i)
+
+        X_train, X_test, y_train, y_test = \
+                    prepare_train_test_split(df, 
+                                             df.columns.get_loc("is_churn"), 
+                                             sampler = sampler[1], 
+                                             split_ratio = 0.7, 
+                                             r_state = r_state,
+                                             cat_col = cat_col)
+        
+        if i == 0:
+            plt.subplot(1, 2, 1)
+            y_train.is_churn.value_counts().plot(kind='bar', title='Train Set - Count (target)')
+            plt.subplot(1, 2, 2)
+            y_test.is_churn.value_counts().plot(kind='bar', title='Test Set - Count (target)')
+            plt.tight_layout()
+            plt.show()
+
+        model_build_results = train_model(X_train, X_test, 
+                                          y_train.is_churn.values, y_test.is_churn.values, 
+                                          classifiers = classifier_set,
+                                          sampling_method = sampler[0],
+                                          cv_iter = cv_iter
+                                         )
+
+        metrics = model_build_results[0]
+        metrics['sample'] = i
+        metrics_all = metrics_all.append(metrics)
+
+        if i == 0:
+            plot_data = []
+            for res in model_build_results[1]:
+                model_name, model, (fpr, tpr, roc_auc), (precision, recall, prc_auc) = res
+                plot_data.append((model_name, tpr, fpr, roc_auc, precision, recall, prc_auc))   
+
+            plot_roc_prc(plot_data)
+
+    return metrics_all
+
 def prepare_train_test_split_v1(df, target_index, sampling_type = None, sample_ratio = 1.0, split_ratio = 0.7, r_state = None): 
         
     X_train, X_test, y_train, y_test = train_test_split(df.iloc[:,target_index+1:], df.iloc[:,target_index],
@@ -227,11 +272,17 @@ def train_model(X_train, X_test, y_train, y_test,
     
     for name, model, params, metric in classifiers:
         print('Building {0} classifier'.format(name))
+        params = params.copy()
         start = time.time()
         
         if params:
-            print("Optimising using GridSearchCV")
-            clf = GridSearchCV(model, params, cv=5, verbose=2, scoring=metric, n_jobs=-1)
+            if params.pop('search_type', 'GRID_SEARCH_CV') == 'RANDOM_SEARCH_CV':
+                print("Optimising using RandomizedSearchCV")
+                clf = RandomizedSearchCV(model, params, cv=(cv_iter if cv_iter else 3), verbose=2, scoring=metric, n_jobs=-1)
+            else:
+                print("Optimising using GridSearchCV")
+                clf = GridSearchCV(model, params, cv=(cv_iter if cv_iter else 3), verbose=2, scoring=metric, n_jobs=-1)
+                
             clf.fit(X_train.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1, errors='ignore'), 
                     y_train)         
             model = clf.best_estimator_ 
@@ -257,11 +308,11 @@ def train_model(X_train, X_test, y_train, y_test,
         pr_ap = average_precision_score(y_test, y_predict, average='weighted')        
 
         if cv_iter:   
-            print("Performing {}-fold CV on test set".format(cv_iter))
+            print("Performing {}-fold CV on test set using {} metric".format(cv_iter, metric))
             cv_score = cross_val_score(model,
                                        X_test.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1, errors='ignore'), 
                                        y_test, 
-                                       scoring = 'f1', 
+                                       scoring = metric, 
                                        n_jobs = -1,
                                        cv=cv_iter)
         
