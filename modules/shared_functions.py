@@ -15,7 +15,7 @@ from sklearn.model_selection import RandomizedSearchCV
 
 from sklearn.model_selection import cross_val_score
 
-from sklearn.metrics import accuracy_score, roc_curve, auc, confusion_matrix, f1_score, log_loss, precision_recall_curve, average_precision_score, precision_recall_curve, recall_score, precision_score
+from sklearn.metrics import accuracy_score, roc_curve, auc, confusion_matrix, f1_score, log_loss, precision_recall_curve, average_precision_score, precision_recall_curve, recall_score, precision_score, average_precision_score, balanced_accuracy_score
 #from sklearn.metrics import balanced_accuracy_score
 
 import numpy as np
@@ -47,20 +47,6 @@ def OHE(df, col = ['city','registered_via']):
     
     df = pd.get_dummies(df, columns=c2, drop_first=True, prefix=c3)
     return df
-
-def balanced_accuracy(y_true, y_pred):
-    # (TP/P + TN/N) / 2
-    conf_m = confusion_matrix(y_true, y_pred)
-    tn = conf_m[0][0]
-    fn = conf_m[1][0]
-    tp = conf_m[1][1]
-    fp = conf_m[0][1]
-
-    p_recall = tp / (tp + fn)   
-    n_recall = tn / (tn + fp)
-    print("P_Recall: " + str(round(p_recall, 3)) + "; N_Recall: " + str(round(n_recall, 3)))
-
-    return (p_recall + n_recall) / 2
 
 def intersection(lst1, lst2): 
     return list(set(lst1) & set(lst2)) 
@@ -113,12 +99,18 @@ def prepare_train_test_split(df, target_index, sampler = None, split_ratio = 0.7
         ## This will fit the provided sampling approach to the training data 
         X_train, y_train = sampler.fit_resample(X_train, y_train)
         print("POST-SAMPLING:", X_train.shape, y_train.shape, Counter(y_train))
-    
+           
     # Reconsctuct the dataframes
     X_train = pd.DataFrame(X_train, columns=df.iloc[:,0+1:].columns)
     X_test = pd.DataFrame(X_test, columns=df.iloc[:,0+1:].columns)
     y_train = pd.DataFrame(y_train, columns=['is_churn'])
     y_test = pd.DataFrame(y_test, columns=['is_churn'])
+    
+    # The dtypes are cast to object during sampling, need to set them back  
+    print("Set the train df types correctly based on the test set")
+    for col, dtype in zip(X_test.columns, X_test.dtypes):
+        #print("Set:", col, "as", dtype)
+        X_train[col] = X_train[col].astype(dtype)
     
     # Normalise the dataset
     X_train, X_test = normalise(X_train, X_test)
@@ -252,7 +244,7 @@ def train_model_v1(df, sampling_method = None, sample_ratio = 1.0, classifiers =
                                       finish-start,
                                       roc_auc, 
                                       auc_prc,
-                                      balanced_accuracy(y_test, y_predict)]], 
+                                      balanced_accuracy_score(y_test, y_predict)]], 
                                     columns=metric_cols)
         metrics = metrics.append(metric_entry)
         
@@ -267,9 +259,9 @@ def train_model(X_train, X_test, y_train, y_test,
     
     target_index = 0
     results = []
-    metric_cols = ["classifier", "sampling_method", "tn", "fn", "tp", "fp", "accuracy", "precision", "recall", "f1_score", "log_loss", "time_taken", "aucroc", "auprc", "bal_acc", "cv_score_mean", "cv_score_std"]
+    metric_cols = ["classifier", "sampling_method", "tn", "fn", "tp", "fp", "accuracy", "precision", "recall", "neg_recall", "f1_score", "log_loss", "time_taken", "aucroc", "auprc", "balanced_accuracy", "cv_score_mean", "cv_score_std"]
     metrics = pd.DataFrame(columns=metric_cols)
-    
+
     for name, model, params, metric in classifiers:
         print('Building {0} classifier'.format(name))
         params = params.copy()
@@ -328,12 +320,13 @@ def train_model(X_train, X_test, y_train, y_test,
                                       accuracy_score(y_test, y_predict),
                                       precision_score(y_test, y_predict),
                                       recall_score(y_test, y_predict),
+                                      tn / (tn + fp),
                                       f1_score(y_test, y_predict), 
                                       log_loss(y_test, y_predict),
                                       finish-start,
                                       roc_auc, 
                                       auc_prc,
-                                      balanced_accuracy(y_test, y_predict),
+                                      balanced_accuracy_score(y_test, y_predict),
                                       np.mean(cv_score) if cv_iter else -1, 
                                       np.std(cv_score) if cv_iter else -1]], 
                                     columns=metric_cols)       
