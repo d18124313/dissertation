@@ -16,7 +16,6 @@ from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import cross_val_score
 
 from sklearn.metrics import accuracy_score, roc_curve, auc, confusion_matrix, f1_score, log_loss, precision_recall_curve, average_precision_score, precision_recall_curve, recall_score, precision_score, average_precision_score, balanced_accuracy_score
-#from sklearn.metrics import balanced_accuracy_score
 
 import numpy as np
 import pandas as pd
@@ -53,7 +52,7 @@ def intersection(lst1, lst2):
 
 def normalise(train_set, test_set):
     print("Applying normalisation to train and test sets")
-    scale_columns = ['bd', 'age_cat', 'registration_init_time', 'total_actual_payment', 'mean_payment_each_transaction', \
+    scale_columns = ['bd', 'age_cat', 'total_actual_payment', 'mean_payment_each_transaction', \
                      'plan_net_worth', 'total_order', 'cancel_times']  
  
     scale_us = intersection(train_set.columns, scale_columns) 
@@ -86,6 +85,40 @@ def undersample_dataset(df, target_col = 'is_churn', r_state = None):
 
     # Combine majority class with upsampled minority class
     return pd.concat([df[df[target_col]==1], down_sampled])
+
+def prepare_train_test_data(X_train, X_test, y_train, y_test, sampler = DummySampler(), r_state = None, cat_col = ['city','registered_via']): 
+    
+    X_train_meta = X_train.head(1)
+    X_test_meta = X_test.head(1)
+
+    print("PRE-SAMPLING:", X_train.shape, y_train.shape, Counter(y_train))
+    ## This will fit the provided sampling approach to the training data 
+    X_train, y_train = sampler.fit_resample(X_train, y_train)
+    print("POST-SAMPLING:", X_train.shape, y_train.shape, Counter(y_train))
+               
+    # Reconstruct the dataframes
+    X_train = pd.DataFrame(X_train, columns=X_train_meta.columns)
+    X_test = pd.DataFrame(X_test, columns=X_test_meta.columns)
+    y_train = pd.DataFrame(y_train, columns=['is_churn'])
+    y_test = pd.DataFrame(y_test, columns=['is_churn'])
+    
+    # The dtypes are cast to object during sampling, need to set them back  
+    print("Set the train df types correctly based on the test set")
+    for col, dtype in zip(X_test_meta.columns, X_test_meta.dtypes):
+        #print("Set:", col, "as", dtype)
+        X_train[col] = X_train[col].astype(dtype)
+    
+    # Normalise the dataset
+    X_train, X_test = normalise(X_train, X_test)
+    
+    # One-hot-encode the categorical features
+    X_train = OHE(X_train, cat_col)
+    X_test = OHE(X_test, cat_col)
+    
+    print("X_train: ", X_train.shape, y_train.shape)
+    print("X_test: ", X_test.shape, y_test.shape)
+
+    return X_train, X_test, y_train, y_test
 
 def prepare_train_test_split(df, target_index, sampler = None, split_ratio = 0.7, r_state = None, cat_col = ['city','registered_via']): 
         
@@ -124,7 +157,7 @@ def prepare_train_test_split(df, target_index, sampler = None, split_ratio = 0.7
 
     return X_train, X_test, y_train, y_test
 
-def perform_experiment(df, classifier_set, sampler, iterations = 1, r_state = None, cv_iter = None, cat_col = ['city','registered_via']):
+def perform_experiment(X_train, X_test, y_train, y_test, classifier_set, sampler, iterations = 1, r_state = None, cv_iter = None, cat_col = ['city','registered_via']):
     metrics_all = pd.DataFrame()
 
     for i in range(0, iterations):
@@ -132,12 +165,10 @@ def perform_experiment(df, classifier_set, sampler, iterations = 1, r_state = No
         print("Model Build Iteration", i)
 
         X_train, X_test, y_train, y_test = \
-                    prepare_train_test_split(df, 
-                                             df.columns.get_loc("is_churn"), 
-                                             sampler = sampler[1], 
-                                             split_ratio = 0.7, 
-                                             r_state = r_state,
-                                             cat_col = cat_col)
+                    prepare_train_test_data(X_train, X_test, y_train, y_test,
+                                            sampler = sampler[1], 
+                                            r_state = r_state,
+                                            cat_col = cat_col)
         
         if i == 0:
             plt.subplot(1, 2, 1)
