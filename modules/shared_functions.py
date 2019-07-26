@@ -64,28 +64,6 @@ def normalise(train_set, test_set):
     
     return train_set, test_set
 
-def oversample_dataset(df, target_col = 'is_churn', sample_ratio = 1.0, r_state = None):
-    train_negative = df[df[target_col] == 0]
-    # Upsample minority class
-    print("Sample ratio: ", sample_ratio, " :: ", int(train_negative.shape[0] * sample_ratio))
-    train_positive_upsample = resample(df[df[target_col]==1], 
-                                       replace = True, # sample with replacement
-                                       n_samples = int(train_negative.shape[0] * sample_ratio), # to match majority class
-                                       random_state = r_state) # reproducible results
-
-    # Combine majority class with upsampled minority class
-    return pd.concat([train_negative, train_positive_upsample])
-
-def undersample_dataset(df, target_col = 'is_churn', r_state = None):
-    # Down Sample Majority class
-    down_sampled = resample(df[df[target_col] == 0], 
-                           replace = True, # sample with replacement
-                           n_samples = df[df[target_col]==1].shape[0], # to match minority class
-                           random_state = r_state) # reproducible results
-
-    # Combine majority class with upsampled minority class
-    return pd.concat([df[df[target_col]==1], down_sampled])
-
 def prepare_train_test_data(X_train, X_test, y_train, y_test, sampler = DummySampler(), r_state = None, cat_col = ['city','registered_via']): 
     
     X_train_meta = X_train.head(1)
@@ -105,43 +83,6 @@ def prepare_train_test_data(X_train, X_test, y_train, y_test, sampler = DummySam
     # The dtypes are cast to object during sampling, need to set them back  
     print("Set the train df types correctly based on the test set")
     for col, dtype in zip(X_test_meta.columns, X_test_meta.dtypes):
-        #print("Set:", col, "as", dtype)
-        X_train[col] = X_train[col].astype(dtype)
-    
-    # Normalise the dataset
-    X_train, X_test = normalise(X_train, X_test)
-    
-    # One-hot-encode the categorical features
-    X_train = OHE(X_train, cat_col)
-    X_test = OHE(X_test, cat_col)
-    
-    print("X_train: ", X_train.shape, y_train.shape)
-    print("X_test: ", X_test.shape, y_test.shape)
-
-    return X_train, X_test, y_train, y_test
-
-def prepare_train_test_split(df, target_index, sampler = None, split_ratio = 0.7, r_state = None, cat_col = ['city','registered_via']): 
-        
-    X_train, X_test, y_train, y_test = train_test_split(df.iloc[:,target_index+1:], df.iloc[:,target_index],
-                                                        train_size=split_ratio, 
-                                                        stratify=df.iloc[:,target_index],
-                                                        random_state = r_state)
-    
-    if sampler: 
-        print("PRE-SAMPLING:", X_train.shape, y_train.shape, Counter(y_train))
-        ## This will fit the provided sampling approach to the training data 
-        X_train, y_train = sampler.fit_resample(X_train, y_train)
-        print("POST-SAMPLING:", X_train.shape, y_train.shape, Counter(y_train))
-           
-    # Reconsctuct the dataframes
-    X_train = pd.DataFrame(X_train, columns=df.iloc[:,0+1:].columns)
-    X_test = pd.DataFrame(X_test, columns=df.iloc[:,0+1:].columns)
-    y_train = pd.DataFrame(y_train, columns=['is_churn'])
-    y_test = pd.DataFrame(y_test, columns=['is_churn'])
-    
-    # The dtypes are cast to object during sampling, need to set them back  
-    print("Set the train df types correctly based on the test set")
-    for col, dtype in zip(X_test.columns, X_test.dtypes):
         #print("Set:", col, "as", dtype)
         X_train[col] = X_train[col].astype(dtype)
     
@@ -199,89 +140,8 @@ def perform_experiment(X_train, X_test, y_train, y_test, classifier_set, sampler
 
     return metrics_all
 
-def prepare_train_test_split_v1(df, target_index, sampling_type = None, sample_ratio = 1.0, split_ratio = 0.7, r_state = None): 
-        
-    X_train, X_test, y_train, y_test = train_test_split(df.iloc[:,target_index+1:], df.iloc[:,target_index],
-                                                        train_size=split_ratio, 
-                                                        stratify=df.iloc[:,target_index],
-                                                        random_state = r_state)
-    
-    train_set = X_train
-    train_set['is_churn'] = y_train
-    
-    ## Do any over/under sampling if required
-    if sampling_type == 'over':
-        train_set = oversample_dataset(train_set, sample_ratio = sample_ratio, r_state=r_state).sort_values(['registration_init_time_dt'])
-    elif sampling_type == 'under':
-        train_set = undersample_dataset(train_set, r_state = r_state).sort_values(['registration_init_time_dt'])
-
-    ## Generate the train and test datasets for this..  
-    X_train, y_train = train_set.iloc[:, 0:-1], train_set.iloc[:, -1]
-    
-    # Normalise the dataset
-    X_train, X_test = normalise(X_train, X_test)
-
-    return X_train, X_test, y_train, y_test
-
 def clean_dataset(df):
     return df.dropna().copy()
-
-def train_model_v1(df, sampling_method = None, sample_ratio = 1.0, classifiers = [('RF', RandomForestClassifier(), {})]):
-    
-    target_index = 0
-    results = []
-    metric_cols = ["classifier", "sampling_method", "sampling_ratio", "accuracy", "precision", "recall", "f1_score", "log_loss", "time_taken", "aucroc", "auprc", "bal_acc"]
-    
-    metrics = pd.DataFrame(columns=metric_cols)
-
-    X_train, X_test, y_train, y_test = prepare_train_test_split_v1(df, 0, sampling_method, sample_ratio)
-    
-    for name, model, params, metric in classifiers:
-        print('Building {0} classifier'.format(name))
-        start = time.time()
-        
-        if params:
-            print("Optimising using GridSearchCV")
-            clf = GridSearchCV(model, params, cv=5, verbose=2, scoring=metric, n_jobs=-1)
-            clf.fit(X_train.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1), 
-                    y_train)         
-            model = clf.best_estimator_ 
-        else:
-            print("No params set, using Standard training")
-            model.fit(X_train.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1), 
-                    y_train)      
-            
-        y_predict = model.predict(X_test.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1))
-        y_predict_prob = model.predict_proba(X_test.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1))[:,1]
-
-        finish = time.time()
-        
-        # Compute ROC/AUC
-        fpr, tpr, thresholds = roc_curve(y_test, y_predict_prob)
-        roc_auc = auc(fpr, tpr)        
-        # Compute Precision-Recall
-        precision, recall, thresholds = precision_recall_curve(y_test, y_predict_prob)
-        # calculate precision-recall AUC
-        auc_prc = auc(recall, precision)
-        # average = weighted|macro|micro|samples
-        pr_ap = average_precision_score(y_test, y_predict, average='weighted')
-
-        metric_entry = pd.DataFrame([[model.__class__.__name__, sampling_method, sample_ratio if sampling_method else None,
-                                      accuracy_score(y_test, y_predict),
-                                      precision_score(y_test, y_predict),
-                                      recall_score(y_test, y_predict),
-                                      f1_score(y_test, y_predict), 
-                                      log_loss(y_test, y_predict),
-                                      finish-start,
-                                      roc_auc, 
-                                      auc_prc,
-                                      balanced_accuracy_score(y_test, y_predict)]], 
-                                    columns=metric_cols)
-        metrics = metrics.append(metric_entry)
-        
-        results.append((model.__class__.__name__, model, (fpr, tpr, roc_auc), (precision, recall, auc_prc)))
-        
-    return (metrics, results)
 
 def train_model(X_train, X_test, y_train, y_test, 
                 classifiers = [('RF', RandomForestClassifier(), {})], 
@@ -451,89 +311,6 @@ def plot_roc_prc(model_results, title='ROC Curve'):
 
     return None
 
-def plot_roc(model_results, title='ROC Curve'):
-    """Plot an ROC curve for predictions. 
-       Source: http://scikit-learn.org/stable/auto_examples/model_selection/plot_precision_recall.html#sphx-glr-auto-examples-model-selection-plot-precision-recall-py"""
-
-    # Plot all ROC curves
-    plt.figure(figsize=(10, 8))
-    lw = 2
-    
-    for (model_name, tpr, fpr, auc) in model_results:
-        
-        plt.plot(fpr, tpr,
-                 label='{0} ROC curve (area = {1:0.2f})'
-                       ''.format(model_name, auc),
-                 linewidth=4)
-
-    plt.plot([0, 1], [0, 1], 'k--', lw=lw)
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('Receiver Operating Characteristic curve for selected models')
-    plt.legend(loc="lower right")
-    plt.show()
-
-    return None
-
-def plot_precision_recall(test_y, probs, title='Precision Recall Curve', threshold_selected=None):
-    """Plot a precision recall curve for predictions. 
-       Source: http://scikit-learn.org/stable/auto_examples/model_selection/plot_precision_recall.html#sphx-glr-auto-examples-model-selection-plot-precision-recall-py"""
-
-    precision, recall, threshold = precision_recall_curve(test_y, probs)
-    plt.figure(figsize=(5, 4))
-    # In matplotlib < 1.5, plt.fill_between does not have a 'step' argument
-    step_kwargs = ({'step': 'post'})
-    plt.step(recall, precision, color='b', alpha=0.2,
-             where='post')
-    plt.fill_between(recall, precision, alpha=0.2, color='b', **step_kwargs)
-
-    plt.xlabel('Recall', size=14)
-    plt.ylabel('Precision', size=14)
-    plt.ylim([0.0, 1.05])
-    plt.xlim([0.0, 1.0])
-    plt.title(title, size=15)
-    plt.xticks(size=10)
-    plt.yticks(size=10)
-
-    if threshold_selected:
-        p = precision(np.where(threshold == threshold_selected)[0])
-        r = recall(np.where(threshold == threshold_selected)[0])
-        plt.scatter(r, p, marker='*', size=200)
-        plt.vlines(r, ymin=0, ymax=p, linestyles='--')
-        plt.hlines(p, xmin=0, xmax=r, linestyles='--')
-
-    pr = pd.DataFrame({'precision': precision[:-1], 'recall': recall[:-1],
-                       'threshold': threshold})
-    return pr
-
-def plot_precision_recall(model_results, title='PRC Curve'):
-    """Plot an PRC curve for predictions. 
-       Source: http://scikit-learn.org/stable/auto_examples/model_selection/plot_precision_recall.html#sphx-glr-auto-examples-model-selection-plot-precision-recall-py"""
-
-    # Plot all ROC curves
-    plt.figure(figsize=(10, 8))
-    lw = 2
-    
-    for (model_name, precision, recall, auc) in model_results:
-        
-        plt.plot(recall, precision,
-                 label='{0} PRC curve (area = {1:0.2f})'
-                       ''.format(model_name, auc),
-                 linewidth=4)
-
-    #plt.plot([0, 1], [0, 1], 'k--', lw=lw)
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('Recal')
-    plt.ylabel('Precision')
-    plt.title('Precision-Recall curve for selected models')
-    plt.legend(loc="lower right")
-    plt.show()
-
-    return None
-
 def plot_confusion_matrix(cm, classes,
                           normalize=False,
                           title='Confusion matrix',
@@ -571,91 +348,29 @@ def plot_confusion_matrix(cm, classes,
     plt.xlabel('Predicted label', size=22)
     plt.tight_layout()
 
-def load_train_dataset():
-    ## First the dataset indicating whether the customer churned or not.
-    train_input   = pd.read_csv('C:/Work/kaggle/wsdm-churn/train.csv', 
-                                dtype={'is_churn' : bool, 'msno' : str})
-
-    ## Some basic data about the member 
-    members_input = pd.read_csv('C:/Work/kaggle/wsdm-churn/members_v3.csv',
-                                dtype={'registered_via' : np.uint8,
-                                       'gender' : 'category'})
-
-    train_input = pd.merge(left = train_input, right = members_input, how = 'left', on=['msno'])
-
-    del members_input
-
-    ## Next load in the transactions data
-    transactions_input = pd.read_csv('C:/Work/kaggle/wsdm-churn/transactions.csv',
-                                     dtype = {'payment_method' : 'category',
-                                              'payment_plan_days' : np.uint8,
-                                              'plan_list_price' : np.uint8,
-                                              'actual_amount_paid': np.uint8,
-                                              'is_auto_renew' : np.bool,
-                                              'is_cancel' : np.bool})
-
-    transactions_input = pd.merge(left = train_input, right = transactions_input, how='left', on='msno')
-    grouped  = transactions_input.copy().groupby('msno')
-
-
-    shuffle = grouped.agg({'msno' :{'msno_count': 'count'},
-                           'plan_list_price' :{'plan_list_price':'sum'},
-                           'actual_amount_paid' : {'actual_amount_paid_mean' : 'mean',
-                                                   'actual_amount_paid_sum' : 'sum'},
-                           'is_cancel' : {'is_cancel_sum': 'sum'}})
-    
-    shuffle.columns = shuffle.columns.droplevel(0)
-
-    shuffle.reset_index(inplace=True)
-
-    train_input = pd.merge(left = train_input,right = shuffle,how='left',on='msno')
-
-    del transactions_input,shuffle
-
-    return train_input
-
-def load_v2_dataset():
-    train_input = pd.read_csv('/home/dissertation/data/train_v2.csv',dtype = {'msno' : str})
-    members_input = pd.read_csv('/home/dissertation/data/members_v3.csv',dtype={'registered_via' : np.uint8,
-                                                          'gender' : 'category'})
-
-    train_input = pd.merge(left=train_input, right=members_input, how='left', on=['msno'])
-
-    del members_input
-
-    transactions_input = pd.read_csv('/home/dissertation/data/transactions.csv',
-                                     dtype = {'payment_method' : 'category',
-                                              'payment_plan_days' : np.uint8,
-                                              'plan_list_price' : np.uint8,
-                                              'actual_amount_paid': np.uint8,
-                                              'is_auto_renew' : np.bool,
-                                              'is_cancel' : np.bool})
-
-    transactions_input = pd.merge(left = train_input, 
-                                  right = transactions_input, 
-                                  how='left', 
-                                  on='msno')
-
-    grouped  = transactions_input.copy().groupby('msno')
-
-    shuffle = grouped.agg({'msno' : {'total_order' : 'count'},
-                           'plan_list_price' : {'plan_net_worth' : 'sum'},
-                           'actual_amount_paid' : {'mean_payment_each_transaction' : 'mean',
-                                                   'total_actual_payment' : 'sum'},
-                           'is_cancel' : {'cancel_times' : lambda x : sum(x==1)}})
-
-    shuffle.columns = shuffle.columns.droplevel(0)
-    shuffle.reset_index(inplace=True)
-    
-    train_input = pd.merge(left = train_input,right = shuffle,how='left',on='msno')
-    
-    del transactions_input
-
-    return train_input
-
 ## https://github.com/Featuretools/predict-customer-churn/blob/master/churn/5.%20Modeling.ipynb
 
-def cost(num_fn, num_tp, num_fp, debug=False):
+
+def calc_cost(num_tp, num_tn, num_fp, num_fn, debug=False):
+    
+    ## Cost*FN + 0*TN + Incentive*FP + Incentive*TP
+    
+    # Incentive cost is 25 TWD off subscription for 4 months
+    plan_incentive_cost = (25 * 4) 
+    # CAC
+    customer_acq_cost = 500
+
+    cost = customer_acq_cost*num_fn + plan_incentive_cost*num_fp + plan_incentive_cost*num_tp
+    
+    if debug:
+        print("Worst case cost (We ignore churn and customers leave): ", customer_acq_cost * (num_tp + num_fn))
+        print("Best case cost (We identify all churners and offer the incentive to keep them): ", plan_incentive_cost * (num_tp + num_fn))
+        print("Offering all customers the incentive would cost", plan_incentive_cost * sum([num_tp, num_tn, num_fp, num_fn]))
+        print("Applying this model will mean a churn cost of {0:.2f}".format(cost))
+    
+    return cost
+
+def loss(num_fn, num_tp, num_fp, debug=False):
     num_churns = 13963
     plan_list_price = 150
     plan_incentive_price = 100
@@ -687,17 +402,8 @@ def cost(num_fn, num_tp, num_fp, debug=False):
 """
 def calc_churn_monetary_value(row, num_members, churn_rate, debug=False):
         
-    plan_list_price = 150
-    plan_incentive_price = 100
     ntd_eur_conv_rate = 0.029
     churner_conversion_rate = 0.75
-    new_customer_acquisition_cost = 3 *  plan_list_price
-    
-    num_churns = int(num_members * churn_rate)
-    monthly_revenue = num_members * plan_list_price
-    
-    # Find the typical loss of churned customers
-    monthly_loss_to_churns = num_churns * (plan_list_price)
     
     #print("Revenue lost to churns is {0:.2f}".format(monthly_loss_to_churns))
     
@@ -708,41 +414,10 @@ def calc_churn_monetary_value(row, num_members, churn_rate, debug=False):
     # How many of the actual churns did the model predict incorrectly?
     false_positives = row.fp
     # True negatives have zero cost in this context
+    true_negatives = row.tn
 
     ## Lets now calculate the cost of churners based on this model
     
-    # 1. FP: If prediction is churn and they did not churn yet are offered the incentive price, then thats lost revenue
-    revenue_lost_false_positives = false_positives * (plan_list_price - plan_incentive_price)
-    # 2. FN: How much did the churners we missed cost 
-    #            Here we have lost revenue, plus need to acquire a new customer to replace them
-    revenue_lost_false_negatives = false_negatives * (plan_incentive_price)
-    # 3. TP:  Assuming we sucessfully re-subscribe a percentage of the identified churners, what is the retention in revenue
-    revenue_retained_true_positives = (true_positives * plan_incentive_price) * churner_conversion_rate
-    
-    net_loss = monthly_loss_to_churns - (revenue_retained_true_positives - (revenue_lost_false_positives + revenue_lost_false_negatives))
- 
-    if debug:
-        print("Cost of churns in real life is: ", churn_loss)
-        print("This model will identify {0} true churns saving {1:.2f}".format(num_tp, revenue_retained_true_positives))
-        print("This model will falsely identify {0} churns losing {1:.2f} in revenue".format(num_fp, revenue_lost_false_positives))
-        print("This model will fail to identify {0} churns losing {1:.2f} in revenue".format(num_fn, revenue_lost_false_negatives))
-        print("Applying this model will mean a churn loss of {0:.2f}".format(net_loss))
-       
-    """
-    
-    print("{3} :: FP: {0:.2f}; FN: {1:.2f}; TP: {2:.2f} = {4:.2f}".format(
-                    revenue_lost_false_positives, 
-                    revenue_lost_false_negatives, 
-                    revenue_retained_true_positives,
-                    row.classifier,
-                    model_churn_cost))
-    
-    print("{3} :: monthly_loss_to_churns: {0:.2f}; model_churn_cost: {1:.2f}; model_churn_savings: {2:.2f};".format(
-                    monthly_loss_to_churns, 
-                    model_churn_cost,
-                    model_churn_diff,
-                    row.classifier))
-    """
+    cost = calc_cost(true_positives, true_negatives, false_positives, false_negatives, debug)
          
-    return net_loss
-
+    return cost
