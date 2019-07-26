@@ -12,6 +12,7 @@ from sklearn.naive_bayes import GaussianNB
 from sklearn import preprocessing
 from collections import Counter
 from sklearn.model_selection import RandomizedSearchCV
+import autosklearn.classification
 
 from sklearn.model_selection import cross_val_score
 
@@ -23,6 +24,9 @@ import time
 
 plt.style.use('seaborn')
 
+
+METRIC_COLS = ["classifier", "sampling_method", "tn", "fn", "tp", "fp", "accuracy", "precision", "recall", "neg_recall", "f1_score", "log_loss", "time_taken", "aucroc", "auprc", "balanced_accuracy", "cv_score_mean", "cv_score_std"]
+    
 class DummySampler:
 
     def sample(self, X, y):
@@ -36,15 +40,19 @@ class DummySampler:
 
 def OHE(df, col = ['city','registered_via']):
    
-    print('Categorical columns in dataset', col)
-    
-    c2,c3 = [],{}
-    for c in col:
-        if df[c].nunique()>2 :
-            c2.append(c)
-            c3[c] = 'ohe_'+c
-    
-    df = pd.get_dummies(df, columns=c2, drop_first=True, prefix=c3)
+    if col:        
+        print('Categorical columns in dataset', col)
+
+        c2,c3 = [],{}
+        for c in col:
+            if df[c].nunique()>2 :
+                c2.append(c)
+                c3[c] = 'ohe_'+c
+
+        df = pd.get_dummies(df, columns=c2, drop_first=True, prefix=c3)
+    else:
+        print('No categorical columns provided for OHE')
+        
     return df
 
 def intersection(lst1, lst2): 
@@ -98,7 +106,11 @@ def prepare_train_test_data(X_train, X_test, y_train, y_test, sampler = DummySam
 
     return X_train, X_test, y_train, y_test
 
-def perform_experiment(X_train, X_test, y_train, y_test, classifier_set, sampler, iterations = 1, r_state = None, cv_iter = None, cat_col = ['city','registered_via']):
+def perform_experiment(X_train, X_test, y_train, y_test, classifier_set, sampler, iterations = 1, 
+                       r_state = None, cv_iter = None, 
+                       cat_col = ['city','registered_via'],
+                       feat_defs = None):
+    
     metrics_all = pd.DataFrame()
 
     for i in range(0, iterations):
@@ -123,7 +135,8 @@ def perform_experiment(X_train, X_test, y_train, y_test, classifier_set, sampler
                                           y_train.is_churn.values, y_test.is_churn.values, 
                                           classifiers = classifier_set,
                                           sampling_method = sampler[0],
-                                          cv_iter = cv_iter
+                                          cv_iter = cv_iter,
+                                          feat_defs = feat_defs
                                          )
 
         metrics = model_build_results[0]
@@ -146,12 +159,13 @@ def clean_dataset(df):
 def train_model(X_train, X_test, y_train, y_test, 
                 classifiers = [('RF', RandomForestClassifier(), {})], 
                 sampling_method = 'None', 
-                cv_iter=None):
+                cv_iter=None,
+                feat_defs=None):
     
     target_index = 0
     results = []
-    metric_cols = ["classifier", "sampling_method", "tn", "fn", "tp", "fp", "accuracy", "precision", "recall", "neg_recall", "f1_score", "log_loss", "time_taken", "aucroc", "auprc", "balanced_accuracy", "cv_score_mean", "cv_score_std"]
-    metrics = pd.DataFrame(columns=metric_cols)
+    
+    metrics = pd.DataFrame(columns=METRIC_COLS)
 
     for name, model, params, metric in classifiers:
         print('Building {0} classifier'.format(name))
@@ -172,8 +186,15 @@ def train_model(X_train, X_test, y_train, y_test,
             print("CLF:", clf.best_params_)
         else:
             print("No params set, using Standard training")
-            model.fit(X_train.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1, errors='ignore'), 
-                    y_train)      
+            # Special case for Autosklearn to inform it of the feature types
+            if name == 'ASKLEARN' and feat_defs:
+                model.fit(X_train.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1, errors='ignore'), 
+                          y_train,
+                          metric = metric,
+                          feat_type = feat_defs)
+            else:
+                model.fit(X_train.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1, errors='ignore'), 
+                          y_train)      
             
         y_predict = model.predict(X_test.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1, errors='ignore'))
         y_predict_prob = model.predict_proba(X_test.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1, errors='ignore'))[:,1]
@@ -182,14 +203,14 @@ def train_model(X_train, X_test, y_train, y_test,
         
         # Compute ROC/AUC
         fpr, tpr, thresholds = roc_curve(y_test, y_predict_prob)
-        roc_auc = auc(fpr, tpr)        
+        roc_auc = auc(fpr, tpr)     
+        
         # Compute Precision-Recall
         precision, recall, thresholds = precision_recall_curve(y_test, y_predict_prob)
         # calculate precision-recall AUC
-        auc_prc = auc(recall, precision)
-        # average = weighted|macro|micro|samples
-        pr_ap = average_precision_score(y_test, y_predict, average='weighted')        
+        auc_prc = auc(recall, precision)    
 
+        cv_score = []
         if cv_iter:   
             print("Performing {}-fold CV on test set using {} metric".format(cv_iter, metric))
             cv_score = cross_val_score(model,
@@ -197,32 +218,16 @@ def train_model(X_train, X_test, y_train, y_test,
                                        y_test, 
                                        scoring = metric, 
                                        n_jobs = -1,
-                                       cv=cv_iter)
-        
-        conf_m = confusion_matrix(y_test, y_predict)
-        tn = conf_m[0][0]
-        fn = conf_m[1][0]
-        tp = conf_m[1][1]
-        fp = conf_m[0][1]
-
-        metric_entry = pd.DataFrame([[model.__class__.__name__, 
-                                      sampling_method,
-                                      tn, fn, tp, fp,
-                                      accuracy_score(y_test, y_predict),
-                                      precision_score(y_test, y_predict),
-                                      recall_score(y_test, y_predict),
-                                      tn / (tn + fp),
-                                      f1_score(y_test, y_predict), 
-                                      log_loss(y_test, y_predict),
-                                      finish-start,
-                                      roc_auc, 
-                                      auc_prc,
-                                      balanced_accuracy_score(y_test, y_predict),
-                                      np.mean(cv_score) if cv_iter else -1, 
-                                      np.std(cv_score) if cv_iter else -1]], 
-                                    columns=metric_cols)       
-        
-        metrics = metrics.append(metric_entry)
+                                       cv=cv_iter)       
+            
+        metrics = metrics.append(
+                generate_eval_metrics(model.__class__.__name__, 
+                                      sampling_method, 
+                                      y_test,
+                                      y_predict, 
+                                      y_predict_prob,
+                                      cv_score, 
+                                      finish - start))
         
         results.append((model.__class__.__name__, model, (fpr, tpr, roc_auc), (precision, recall, auc_prc)))
         
@@ -234,6 +239,43 @@ def train_model(X_train, X_test, y_train, y_test,
         
     return (metrics, results)
 
+def generate_eval_metrics(class_name, sampling_method, y_test, y_predict, y_predict_prob, cv_score, time_taken):
+
+    fpr, tpr, _ = roc_curve(y_test, y_predict_prob)
+    prec, rec, _ = precision_recall_curve(y_test, y_predict_prob)
+    
+    conf_m = confusion_matrix(y_test, y_predict)
+    tn = conf_m[0][0]
+    fn = conf_m[1][0]
+    tp = conf_m[1][1]
+    fp = conf_m[0][1]
+    
+    mean_score = None
+    std_score = None
+    if cv_score is not None and len(cv_score) > 0:
+        mean_score =  np.mean(cv_score)
+        std_score =  np.std(cv_score)
+        
+
+    metric_entry = pd.DataFrame([[class_name, 
+                                  sampling_method,
+                                  tn, fn, tp, fp,
+                                  accuracy_score(y_test, y_predict),
+                                  precision_score(y_test, y_predict),
+                                  recall_score(y_test, y_predict),
+                                  tn / (tn + fp),
+                                  f1_score(y_test, y_predict), 
+                                  log_loss(y_test, y_predict),
+                                  time_taken,
+                                  auc(fpr, tpr), 
+                                  auc(rec, prec),
+                                  balanced_accuracy_score(y_test, y_predict),
+                                  mean_score if mean_score else -1, 
+                                  std_score if std_score else -1]], 
+                                columns=METRIC_COLS)       
+
+    return metric_entry
+    
 def plot_roc(test_y, probs, title='ROC Curve', threshold_selected=None):
     """Plot an ROC curve for predictions. 
        Source: http://scikit-learn.org/stable/auto_examples/model_selection/plot_precision_recall.html#sphx-glr-auto-examples-model-selection-plot-precision-recall-py"""
