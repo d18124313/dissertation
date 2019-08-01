@@ -25,7 +25,7 @@ import time
 plt.style.use('seaborn')
 
 
-METRIC_COLS = ["label", "classifier", "sampling_method", "tn", "fn", "tp", "fp", "accuracy", "precision", "recall", "neg_recall",                          "f1_score", "log_loss", "time_taken", "aucroc", "auprc", "balanced_accuracy", "cv_score_mean", "cv_score_std"]
+METRIC_COLS = ["label", "classifier", "sampling_method", "tn", "fn", "tp", "fp", "accuracy", "precision", "recall", "neg_recall",                          "f1_score", "log_loss", "train_time", "cv_time", "aucroc", "auprc", "balanced_accuracy", "cv_score_mean", "cv_score_std"]
     
 class DummySampler:
 
@@ -144,9 +144,9 @@ def perform_experiment(X_train, X_test, y_train, y_test, classifier_set, sampler
         if i == 0:
             plot_data = []
             for res in model_build_results[1]:
-                label, model_name, _, fpr, tpr, roc_auc, precision, recall, prc_auc, feat_importance = res
+                label, model_name, sampling_method, _, fpr, tpr, roc_auc, precision, recall, prc_auc, feat_importance = res
                 plot_data.append((model_name, tpr, fpr, roc_auc, precision, recall, prc_auc))  
-                model_results.append((label, model_name, feat_importance, tpr, fpr, roc_auc, precision, recall, prc_auc))
+                model_results.append((label, model_name, sampling_method, feat_importance, tpr, fpr, roc_auc, precision, recall, prc_auc))
 
             plot_roc_prc(plot_data)
 
@@ -198,7 +198,7 @@ def train_model(X_train, X_test, y_train, y_test, classifiers,
         y_predict = model.predict(X_test.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1, errors='ignore'))
         y_predict_prob = model.predict_proba(X_test.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1, errors='ignore'))[:,1]
         
-        finish = time.time()
+        finish_train = time.time()
         
         # Compute ROC/AUC
         fpr, tpr, thresholds = roc_curve(y_test, y_predict_prob)
@@ -209,6 +209,9 @@ def train_model(X_train, X_test, y_train, y_test, classifiers,
         # calculate precision-recall AUC
         prc_auc = auc(recall, precision)    
 
+        ## Lets keep track of CV processing time also
+        finish_cv = finish_train
+        
         cv_score = []
         if cv_iter:   
             print("Performing {}-fold CV on test set using {} metric".format(cv_iter, metric))
@@ -217,7 +220,9 @@ def train_model(X_train, X_test, y_train, y_test, classifiers,
                                        y_test, 
                                        scoring = metric, 
                                        n_jobs = -1,
-                                       cv=cv_iter)       
+                                       cv=cv_iter)    
+            finish_cv = time.time()
+        
             
         metrics = metrics.append(
                 generate_eval_metrics(name, model.__class__.__name__, 
@@ -226,13 +231,14 @@ def train_model(X_train, X_test, y_train, y_test, classifiers,
                                       y_predict, 
                                       y_predict_prob,
                                       cv_score, 
-                                      finish - start))
+                                      finish_train - start, 
+                                      finish_cv - finish_train))
         
         feat_imp = None
         if hasattr(model, 'feature_importances_'):
             feat_imp = collect_feature_importances(model, X_test.columns)
         
-        results.append((name, model.__class__.__name__, model, fpr, tpr, roc_auc, precision, recall, prc_auc, feat_imp))
+        results.append((name, model.__class__.__name__, sampling_method, model, fpr, tpr, roc_auc, precision, recall, prc_auc, feat_imp))
         
     ## Compute the monetary cost of the trained churn models
     metrics['model_churn_cost'] = metrics.apply(calc_churn_monetary_value, 
@@ -257,7 +263,7 @@ def collect_feature_importances(model, df_columns):
     importances = pd.DataFrame({'feat_importances': feat_importances, 'ordered_features': ordered_features})
     return importances
 
-def generate_eval_metrics(label, class_name, sampling_method, y_test, y_predict, y_predict_prob, cv_score, time_taken):
+def generate_eval_metrics(label, class_name, sampling_method, y_test, y_predict, y_predict_prob, cv_score, train_time, cv_time):
 
     fpr, tpr, _ = roc_curve(y_test, y_predict_prob)
     prec, rec, _ = precision_recall_curve(y_test, y_predict_prob)
@@ -283,7 +289,8 @@ def generate_eval_metrics(label, class_name, sampling_method, y_test, y_predict,
                                   tn / (tn + fp),
                                   f1_score(y_test, y_predict), 
                                   log_loss(y_test, y_predict),
-                                  time_taken,
+                                  train_time,
+                                  cv_time,
                                   auc(fpr, tpr), 
                                   auc(rec, prec),
                                   balanced_accuracy_score(y_test, y_predict),
@@ -292,6 +299,18 @@ def generate_eval_metrics(label, class_name, sampling_method, y_test, y_predict,
                                 columns=METRIC_COLS)       
 
     return metric_entry
+
+def filter_top_model_results(top_models, all_model_results):
+    plot_data = list()
+    for idx, row in top_models.iterrows():
+        for res in all_model_results:
+            run_results = res[2]        
+            for alg_results in run_results:
+                if alg_results[0] == row.label and alg_results[1] == row.classifier and alg_results[2] == row.sampling_method:
+                    label, model_name, sampling_method, _, tpr, fpr, roc_auc, precision, recall, prc_auc = alg_results
+
+                    plot_data.append(("{} {}".format(model_name, sampling_method), tpr, fpr, roc_auc, precision, recall, prc_auc))
+    return plot_data
     
 def plot_roc_prc(model_results, title='ROC Curve'):
     """Plot an ROC curve for predictions. 
