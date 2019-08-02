@@ -213,12 +213,17 @@ def train_model(X_train, X_test, y_train, y_test, classifiers,
         finish_cv = finish_train
         
         cv_score = []
+        if 'ASKLEARN' in name or 'TPOT' in name:
+            cv_metric = None
+        else:
+            cv_metric = metric
+            
         if cv_iter:   
             print("Performing {}-fold CV on test set using {} metric".format(cv_iter, metric))
             cv_score = cross_val_score(model,
                                        X_test.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1, errors='ignore'), 
                                        y_test, 
-                                       scoring = metric, 
+                                       scoring = cv_metric, 
                                        n_jobs = -1,
                                        cv=cv_iter)    
             finish_cv = time.time()
@@ -466,3 +471,17 @@ def calc_churn_monetary_value(row, num_members, churn_rate, debug=False):
     cost = calc_cost(true_positives, true_negatives, false_positives, false_negatives, debug)
          
     return cost
+
+def store(results, file_name):    
+    """
+        (sampling_approach_metrics_df, (modelling_results)) =>
+            modelling_results => (label, model_name, feat_importance, tpr, fpr, roc_auc, precision, recall, prc_auc)
+
+        e.g. data[0][1][1][2] returns the feature importance dataframe
+    """
+
+    # Write (overwrite) the file to store the experiment results
+    with open(file_name, 'wb') as f:
+        # Pickle the 'data' dictionary using the highest protocol available.
+        print("Writing results to", f.name)
+        pickle.dump(results, f, pickle.HIGHEST_PROTOCOL)
