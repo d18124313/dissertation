@@ -485,3 +485,8 @@ def store(results, file_name):
         # Pickle the 'data' dictionary using the highest protocol available.
         print("Writing results to", f.name)
         pickle.dump(results, f, pickle.HIGHEST_PROTOCOL)
+        
+def log(msg, file_name):    
+    # Write (overwrite) the file to store the experiment results
+    with open(file_name, 'a') as f:
+        f.write(msg + '\n')
