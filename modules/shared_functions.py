@@ -144,7 +144,7 @@ def perform_experiment(X_train, X_test, y_train, y_test, classifier_set, sampler
         if i == 0:
             plot_data = []
             for res in model_build_results[1]:
-                label, model_name, sampling_method, _, fpr, tpr, roc_auc, precision, recall, prc_auc, feat_importance = res
+                label, model_name, sampling_method, model, fpr, tpr, roc_auc, precision, recall, prc_auc, feat_importance = res
                 plot_data.append((model_name, tpr, fpr, roc_auc, precision, recall, prc_auc))  
                 model_results.append((label, model_name, sampling_method, feat_importance, tpr, fpr, roc_auc, precision, recall, prc_auc))
 
