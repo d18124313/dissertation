@@ -107,7 +107,7 @@ def prepare_train_test_data(X_train, X_test, y_train, y_test, sampler = DummySam
     return X_train, X_test, y_train, y_test
 
 def perform_experiment(X_train, X_test, y_train, y_test, classifier_set, sampler, iterations = 1, 
-                       cv_iter = None, cat_col = ['city','registered_via'], feat_defs = None):
+                       cv_iter = None, cat_col = ['city','registered_via'], feat_defs = None, auto_ml = False):
     
     metrics_all = pd.DataFrame()
     model_results = list()
@@ -146,7 +146,12 @@ def perform_experiment(X_train, X_test, y_train, y_test, classifier_set, sampler
             for res in model_build_results[1]:
                 label, model_name, sampling_method, model, fpr, tpr, roc_auc, precision, recall, prc_auc, feat_importance = res
                 plot_data.append((model_name, tpr, fpr, roc_auc, precision, recall, prc_auc))  
-                model_results.append((label, model_name, sampling_method, feat_importance, tpr, fpr, roc_auc, precision, recall, prc_auc))
+                
+                ## A bit hacky but in this case I need to return the model as well so I can inspect it
+                if auto_ml:
+                    model_results.append((label, model_name, sampling_method, feat_importance, tpr, fpr, roc_auc, precision, recall, prc_auc, model))
+                else:
+                    model_results.append((label, model_name, sampling_method, feat_importance, tpr, fpr, roc_auc, precision, recall, prc_auc))
 
             plot_roc_prc(plot_data)
 
