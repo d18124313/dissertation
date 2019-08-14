@@ -194,7 +194,8 @@ def train_model(X_train, X_test, y_train, y_test, classifiers,
                 model.fit(X_train.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1, errors='ignore'), 
                           y_train,
                           metric = metric,
-                          feat_type = feat_defs)
+                          feat_type = feat_defs,
+                          dataset_name = 'ASKLEARN')
             else:
                 model.fit(X_train.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1, errors='ignore'), 
                           y_train)      
@@ -310,19 +311,19 @@ def generate_eval_metrics(label, class_name, sampling_method, y_test, y_predict,
 
     return metric_entry
 
-def filter_top_model_results(top_models, all_model_results):
-    plot_data = list()
-    for idx, row in top_models.iterrows():
-        for res in all_model_results:
-            run_results = res[2]        
-            for alg_results in run_results:
-                if alg_results[0] == row.label and alg_results[1] == row.classifier and alg_results[2] == row.sampling_method:
-                    label, model_name, sampling_method, _, tpr, fpr, roc_auc, precision, recall, prc_auc = alg_results
+# def filter_top_model_results(top_models, all_model_results):
+#     plot_data = list()
+#     for idx, row in top_models.iterrows():
+#         for res in all_model_results:
+#             run_results = res[2]        
+#             for alg_results in run_results:
+#                 if alg_results[0] == row.label and alg_results[1] == row.classifier and alg_results[2] == row.sampling_method:
+#                     label, model_name, sampling_method, _, tpr, fpr, roc_auc, precision, recall, prc_auc = alg_results
 
-                    plot_data.append(("{} {}".format(model_name, sampling_method), tpr, fpr, roc_auc, precision, recall, prc_auc))
-    return plot_data
+#                     plot_data.append(("{} {}".format(model_name, sampling_method), tpr, fpr, roc_auc, precision, recall, prc_auc))
+#     return plot_data
     
-def plot_roc_prc(model_results, title='ROC Curve'):
+def plot_roc_prc(model_results, subtitle='ROC Curve'):
     """Plot an ROC curve for predictions. 
        Source: http://scikit-learn.org/stable/auto_examples/model_selection/plot_precision_recall.html#sphx-glr-auto-examples-model-selection-plot-precision-recall-py"""
 
@@ -343,7 +344,7 @@ def plot_roc_prc(model_results, title='ROC Curve'):
     plt.ylim([0.0, 1.05])
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title('ROC curve for generated models', size=15)
+    plt.title('ROC curve for {}'.format(subtitle if subtitle else 'generated models'), size=15)
     plt.legend(loc="lower right")
     
     plt.subplot(1, 2, 2)
@@ -359,8 +360,8 @@ def plot_roc_prc(model_results, title='ROC Curve'):
     plt.ylim([0.0, 1.05])
     plt.xlabel('Recall')
     plt.ylabel('Precision')
-    plt.title('Precision-Recall curve for generated models', size=15)
-    plt.legend(loc="lower left")    
+    plt.title('Precision-Recall curve for {}'.format(subtitle if subtitle else 'generated models'), size=15)   
+    plt.legend(loc="lower left") 
     
     plt.show()
 
