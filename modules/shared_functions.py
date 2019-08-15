@@ -335,8 +335,8 @@ def plot_roc_prc(model_results, subtitle='ROC Curve'):
     for (model_name, tpr, fpr, auc, _, _, _) in model_results:
         
         plt.plot(fpr, tpr,
-                 label='{0} ROC curve (area = {1:0.2f})'
-                       ''.format(model_name, auc),
+                 label='{0} (AUROC = {1:0.2f})'
+                       ''.format(model_name.replace('Classifier', ''), auc),
                  linewidth=4)
 
     plt.plot([0, 1], [0, 1], 'k--', lw=lw)
@@ -344,15 +344,15 @@ def plot_roc_prc(model_results, subtitle='ROC Curve'):
     plt.ylim([0.0, 1.05])
     plt.xlabel('False Positive Rate')
     plt.ylabel('True Positive Rate')
-    plt.title('ROC curve for {}'.format(subtitle if subtitle else 'generated models'), size=15)
-    plt.legend(loc="lower right")
+    plt.title('ROC curve {}'.format(subtitle if subtitle else 'generated models'), size=15)
+    plt.legend(loc="lower right", prop={'size': 11})
     
     plt.subplot(1, 2, 2)
     for (model_name, _, _, _, precision, recall, auc) in model_results:
         
         plt.plot(recall, precision,
-                 label='{0} PRC curve (area = {1:0.2f})'
-                       ''.format(model_name, auc),
+                 label='{0} (AUPRC = {1:0.2f})'
+                       ''.format(model_name.replace('Classifier', ''), auc),
                  linewidth=4)
 
     plt.plot([0, 1], [0.058, 0.058], 'k--', lw=lw)
@@ -360,8 +360,8 @@ def plot_roc_prc(model_results, subtitle='ROC Curve'):
     plt.ylim([0.0, 1.05])
     plt.xlabel('Recall')
     plt.ylabel('Precision')
-    plt.title('Precision-Recall curve for {}'.format(subtitle if subtitle else 'generated models'), size=15)   
-    plt.legend(loc="lower left") 
+    plt.title('Precision-Recall curve {}'.format(subtitle if subtitle else 'generated models'), size=15)   
+    plt.legend(loc="lower left", prop={'size': 11}) 
     
     plt.show()
 
