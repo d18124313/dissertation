@@ -2,3 +2,4 @@
 *.log
 *dask*
 **/__pycache__/
+.ipynb_checkpoints/**
