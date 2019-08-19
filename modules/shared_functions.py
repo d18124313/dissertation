@@ -107,7 +107,8 @@ def prepare_train_test_data(X_train, X_test, y_train, y_test, sampler = DummySam
     return X_train, X_test, y_train, y_test
 
 def perform_experiment(X_train, X_test, y_train, y_test, classifier_set, sampler, iterations = 1, 
-                       cv_iter = None, cat_col = ['city','registered_via'], feat_defs = None, auto_ml = False):
+                       cv_iter = None, cat_col = ['city','registered_via'], feat_defs = None, auto_ml = False, 
+                       n_jobs=-1, prepare_data = True):
     
     metrics_all = pd.DataFrame()
     model_results = list()
@@ -116,7 +117,7 @@ def perform_experiment(X_train, X_test, y_train, y_test, classifier_set, sampler
 
         print("Model Build Iteration", i)       
             
-        if i == 0:
+        if prepare_data and i == 0:
             X_train, X_test, y_train, y_test = \
                         prepare_train_test_data(X_train, X_test, y_train, y_test,
                                                 sampler = sampler[1],
@@ -134,7 +135,8 @@ def perform_experiment(X_train, X_test, y_train, y_test, classifier_set, sampler
                                           classifiers = classifier_set,
                                           sampling_method = sampler[0],
                                           cv_iter = cv_iter,
-                                          feat_defs = feat_defs
+                                          feat_defs = feat_defs,
+                                          n_jobs = n_jobs
                                          )
 
         metrics = model_build_results[0]
@@ -163,7 +165,8 @@ def clean_dataset(df):
 def train_model(X_train, X_test, y_train, y_test, classifiers, 
                 sampling_method = 'None', 
                 cv_iter=None,
-                feat_defs=None):
+                feat_defs=None,
+                n_jobs = -1):
     
     target_index = 0
     results = []
@@ -178,10 +181,10 @@ def train_model(X_train, X_test, y_train, y_test, classifiers,
         if params:
             if params.pop('search_type', 'GRID_SEARCH_CV') == 'RANDOM_SEARCH_CV':
                 print("Optimising using RandomizedSearchCV")
-                clf = RandomizedSearchCV(model, params, cv=(cv_iter if cv_iter else 3), verbose=2, scoring=metric, n_jobs=-1)
+                clf = RandomizedSearchCV(model, params, cv=(cv_iter if cv_iter else 3), verbose=2, scoring=metric, n_jobs=n_jobs)
             else:
                 print("Optimising using GridSearchCV")
-                clf = GridSearchCV(model, params, cv=(cv_iter if cv_iter else 3), verbose=2, scoring=metric, n_jobs=-1)
+                clf = GridSearchCV(model, params, cv=(cv_iter if cv_iter else 3), verbose=2, scoring=metric, n_jobs=n_jobs)
                 
             clf.fit(X_train.drop(columns=['registration_init_time', 'registration_init_time_dt'], axis=1, errors='ignore'), 
                     y_train)         
@@ -328,7 +331,7 @@ def plot_roc_prc(model_results, subtitle='ROC Curve'):
        Source: http://scikit-learn.org/stable/auto_examples/model_selection/plot_precision_recall.html#sphx-glr-auto-examples-model-selection-plot-precision-recall-py"""
 
     # Plot all ROC curves
-    plt.figure(figsize=(16, 8))        
+    plt.figure(figsize=(16, 8), facecolor='white')        
     lw = 2    
     
     plt.subplot(1, 2, 1)
@@ -342,9 +345,9 @@ def plot_roc_prc(model_results, subtitle='ROC Curve'):
     plt.plot([0, 1], [0, 1], 'k--', lw=lw)
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
-    plt.xlabel('False Positive Rate')
-    plt.ylabel('True Positive Rate')
-    plt.title('ROC curve {}'.format(subtitle if subtitle else 'generated models'), size=15)
+    plt.xlabel('False Positive Rate', fontsize=12)
+    plt.ylabel('True Positive Rate', fontsize=12)
+    plt.title('ROC Curve {}'.format(subtitle if subtitle else 'generated models'), size=15)
     plt.legend(loc="lower right", prop={'size': 11})
     
     plt.subplot(1, 2, 2)
@@ -358,9 +361,9 @@ def plot_roc_prc(model_results, subtitle='ROC Curve'):
     plt.plot([0, 1], [0.058, 0.058], 'k--', lw=lw)
     plt.xlim([0.0, 1.0])
     plt.ylim([0.0, 1.05])
-    plt.xlabel('Recall')
-    plt.ylabel('Precision')
-    plt.title('Precision-Recall curve {}'.format(subtitle if subtitle else 'generated models'), size=15)   
+    plt.xlabel('Recall', fontsize=12)
+    plt.ylabel('Precision', fontsize=12)
+    plt.title('Precision-Recall Curve {}'.format(subtitle if subtitle else 'generated models'), size=15)   
     plt.legend(loc="lower left", prop={'size': 11}) 
     
     plt.show()
