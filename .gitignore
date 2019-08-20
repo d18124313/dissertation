@@ -3,3 +3,5 @@
 *dask*
 **/__pycache__/
 .ipynb_checkpoints/**
+**/*checkpoint.ipynb
+IMAGES/*

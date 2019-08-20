@@ -22,8 +22,18 @@ import numpy as np
 import pandas as pd
 import time
 
-plt.style.use('seaborn')
-
+#plt.style.use('seaborn')
+plt.style.use('seaborn-poster')
+plt.style.use('fivethirtyeight')
+plt.rcParams['axes.edgecolor'] = '#ffffff'
+plt.rcParams['axes.facecolor'] = '#ffffff'
+plt.rcParams['figure.facecolor'] = '#ffffff'
+plt.rcParams['patch.edgecolor'] = '#ffffff'
+plt.rcParams['patch.facecolor'] = '#ffffff'
+plt.rcParams['savefig.edgecolor'] = '#ffffff'
+plt.rcParams['savefig.facecolor'] = '#ffffff'
+plt.rcParams['xtick.labelsize'] = 12
+plt.rcParams['ytick.labelsize'] = 12
 
 METRIC_COLS = ["label", "classifier", "sampling_method", "tn", "fn", "tp", "fp", "accuracy", "precision", "recall", "neg_recall",                          "f1_score", "log_loss", "train_time", "cv_time", "aucroc", "auprc", "balanced_accuracy", "cv_score_mean", "cv_score_std"]
     
@@ -326,7 +336,7 @@ def generate_eval_metrics(label, class_name, sampling_method, y_test, y_predict,
 #                     plot_data.append(("{} {}".format(model_name, sampling_method), tpr, fpr, roc_auc, precision, recall, prc_auc))
 #     return plot_data
     
-def plot_roc_prc(model_results, subtitle='ROC Curve'):
+def plot_roc_prc(model_results, subtitle='ROC Curve', file_name = None):
     """Plot an ROC curve for predictions. 
        Source: http://scikit-learn.org/stable/auto_examples/model_selection/plot_precision_recall.html#sphx-glr-auto-examples-model-selection-plot-precision-recall-py"""
 
@@ -366,6 +376,9 @@ def plot_roc_prc(model_results, subtitle='ROC Curve'):
     plt.title('Precision-Recall Curve {}'.format(subtitle if subtitle else 'generated models'), size=15)   
     plt.legend(loc="lower left", prop={'size': 11}) 
     
+    if file_name:
+        plt.savefig(file_name)
+        
     plt.show()
 
     return None
